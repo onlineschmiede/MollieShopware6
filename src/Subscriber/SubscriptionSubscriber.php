@@ -167,6 +167,7 @@ class SubscriptionSubscriber implements EventSubscriberInterface
         }
     }
 
+    // this is not done yet, it should use EntityWrittenEvent as $event
     public function onOrderPlaced(CheckoutOrderPlacedEvent $event): void
     {
         // Here you can handle the event
@@ -276,7 +277,7 @@ class SubscriptionSubscriber implements EventSubscriberInterface
                 break;
 
             default:
-                $discount = 0;
+                $discount = 0.0;
 
                 break;
         }

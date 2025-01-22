@@ -247,7 +247,7 @@ class OrderCloneService
                 break;
 
             default:
-                $discount = 0;
+                $discount = 0.0;
 
                 break;
         }
