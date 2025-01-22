@@ -10,8 +10,8 @@ use Kiener\MolliePayments\Storefront\Struct\SubscriptionDataExtensionStruct;
 use Kiener\MolliePayments\Struct\LineItem\LineItemAttributes;
 use Kiener\MolliePayments\Struct\Product\ProductAttributes;
 use Shopware\Core\Checkout\Cart\Event\CartBeforeSerializationEvent;
-use Shopware\Core\Checkout\Cart\Event\CheckoutOrderPlacedEvent;
 use Shopware\Core\Checkout\Order\OrderEvents;
+use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 use Shopware\Core\System\SystemConfig\SystemConfigService;
@@ -59,7 +59,7 @@ class SubscriptionSubscriber implements EventSubscriberInterface
             StorefrontRenderEvent::class => 'onStorefrontRender',
             ProductPageLoadedEvent::class => 'addSubscriptionData',
             CheckoutConfirmPageLoadedEvent::class => 'addSubscriptionData',
-            OrderEvents::ORDER_WRITTEN_EVENT => 'onOrderPlaced',
+            OrderEvents::ORDER_WRITTEN_EVENT => 'onOrderWritten',
         ];
     }
 
@@ -167,11 +167,14 @@ class SubscriptionSubscriber implements EventSubscriberInterface
         }
     }
 
-    // this is not done yet, it should use EntityWrittenEvent as $event
-    public function onOrderPlaced(CheckoutOrderPlacedEvent $event): void
+    public function onOrderWritten(EntityWrittenEvent $event): void
     {
-        // Here you can handle the event
-        $order = $event->getOrder();
+        $orderIds = [];
+        foreach ($event->getWriteResults() as $writeResult) {
+            $orderIds[] = $writeResult->getPrimaryKey();
+        }
+        // TODO: handle potential multiple orders
+        $order = $this->repoOrders->search(new Criteria($orderIds), $event->getContext())->first();
         if (null === $order) {
             return;
         }
