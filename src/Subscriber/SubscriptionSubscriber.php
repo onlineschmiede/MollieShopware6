@@ -13,8 +13,6 @@ use Kiener\MolliePayments\Struct\LineItem\LineItemAttributes;
 use Kiener\MolliePayments\Struct\Product\ProductAttributes;
 use Shopware\Core\Checkout\Cart\Event\CartBeforeSerializationEvent;
 use Shopware\Core\Checkout\Order\OrderEvents;
-use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenEvent;
-use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
 use Shopware\Core\System\NumberRange\ValueGenerator\NumberRangeValueGeneratorInterface;
 use Shopware\Core\System\SystemConfig\SystemConfigService;
 use Shopware\Storefront\Event\StorefrontRenderEvent;
@@ -76,8 +74,8 @@ class SubscriptionSubscriber implements EventSubscriberInterface
             StorefrontRenderEvent::class => 'onStorefrontRender',
             ProductPageLoadedEvent::class => 'addSubscriptionData',
             CheckoutConfirmPageLoadedEvent::class => 'addSubscriptionData',
-            ProductPageLoadedEvent::class => 'onProductPageLoaded',
-            OrderEvents::ORDER_WRITTEN_EVENT => 'onOrderWritten',
+            // ProductPageLoadedEvent::class => 'onProductPageLoaded',
+            // OrderEvents::ORDER_WRITTEN_EVENT => 'onOrderWritten',
         ];
     }
 
@@ -186,6 +184,7 @@ class SubscriptionSubscriber implements EventSubscriberInterface
     }
 
     // only for testing purposes
+    /*
     public function onProductPageLoaded(ProductPageLoadedEvent $event): void
     {
         // $product = $event->getPage()->getProduct();
@@ -208,112 +207,7 @@ class SubscriptionSubscriber implements EventSubscriberInterface
             $orderId = $this->orderCloneService->createNewOrder($order, $newOrderNumber, false, $context);
         }
     }
-
-    // this is not done yet, it should use EntityWrittenEvent as $event
-    public function onOrderWritten(EntityWrittenEvent $event): void
-    {
-        // Here you can handle the event
-
-        foreach ($event->getIds() as $orderId) {
-            $criteria = new Criteria([$orderId]);
-            $criteria->addAssociation('lineItems');
-            $order = $this->repoOrders->search($criteria, $event->getContext())->first();
-        }
-
-        if (null === $order) {
-            return;
-        }
-
-        $customFields = $event->getPayloads()[0]['customFields']['"mollie_payments']['swSubscriptionId'] ?? null;
-
-        if ($customFields) {
-            // Process custom fields
-            foreach ($customFields as $key => $value);
-        }
-    }
-
-    public function getSubscriptionDiscountPercentage(int $subscriptionOrderCount, $salesChannelId): float
-    {
-        $discount = 0.0;
-
-        $numberOfDiscountsToApplyField = $this->systemConfigService->get('MolliePayments.config.numberOfDiscounts', $salesChannelId);
-
-        if ($subscriptionOrderCount > $numberOfDiscountsToApplyField) {
-            $discountTakes = (int) $numberOfDiscountsToApplyField;
-        } else {
-            $discountTakes = $subscriptionOrderCount;
-        }
-
-        switch ($discountTakes) {
-            case 1:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterFirstPaymentRate', $salesChannelId);
-
-                break;
-
-            case 2:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterSecondPaymentRate', $salesChannelId);
-
-                break;
-
-            case 3:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterThirdPaymentRate', $salesChannelId);
-
-                break;
-
-            case 4:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterFourthPaymentRate', $salesChannelId);
-
-                break;
-
-            case 5:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterFifthPaymentRate', $salesChannelId);
-
-                break;
-
-            case 6:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterSixthPaymentRate', $salesChannelId);
-
-                break;
-
-            case 7:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterSeventhPaymentRate', $salesChannelId);
-
-                break;
-
-            case 8:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterEighthPaymentRate', $salesChannelId);
-
-                break;
-
-            case 9:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterNinthPaymentRate', $salesChannelId);
-
-                break;
-
-            case 10:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterTenthPaymentRate', $salesChannelId);
-
-                break;
-
-            case 11:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterEleventhPaymentRate', $salesChannelId);
-
-                break;
-
-            case 12:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterTwelfthPaymentRate', $salesChannelId);
-
-                break;
-
-            default:
-                $discount = 0.0;
-
-                break;
-        }
-
-        return $discount;
-    }
-
+ */
     private function getTranslatedInterval(int $interval, string $unit, int $repetition): string
     {
         $snippetKey = '';

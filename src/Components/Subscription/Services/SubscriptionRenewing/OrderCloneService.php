@@ -3,10 +3,17 @@
 namespace Kiener\MolliePayments\Components\Subscription\Services\SubscriptionRenewing;
 
 use Kiener\MolliePayments\Repository\Order\OrderRepositoryInterface;
+use Shopware\Core\Checkout\Cart\Cart;
 use Shopware\Core\Checkout\Cart\CartBehavior;
+use Shopware\Core\Checkout\Cart\LineItem\LineItem;
+use Shopware\Core\Checkout\Cart\LineItem\LineItemCollection;
 use Shopware\Core\Checkout\Cart\Order\OrderConversionContext;
 use Shopware\Core\Checkout\Cart\Order\OrderConverter;
+use Shopware\Core\Checkout\Cart\Price\PercentagePriceCalculator;
+use Shopware\Core\Checkout\Cart\Price\Struct\CartPrice;
+use Shopware\Core\Checkout\Cart\Price\Struct\PercentagePriceDefinition;
 use Shopware\Core\Checkout\Cart\Processor;
+use Shopware\Core\Checkout\Cart\Rule\LineItemRule;
 use Shopware\Core\Checkout\Order\Aggregate\OrderAddress\OrderAddressCollection;
 use Shopware\Core\Checkout\Order\Aggregate\OrderCustomer\OrderCustomerEntity;
 use Shopware\Core\Checkout\Order\Aggregate\OrderDelivery\OrderDeliveryCollection;
@@ -37,12 +44,15 @@ class OrderCloneService
 
     private SystemConfigService $systemConfigService;
 
-    public function __construct(OrderRepositoryInterface $repoOrders, OrderConverter $orderConverter, Processor $processor, SystemConfigService $systemConfigService)
+    private PercentagePriceCalculator $percentage_calculator;
+
+    public function __construct(OrderRepositoryInterface $repoOrders, OrderConverter $orderConverter, Processor $processor, SystemConfigService $systemConfigService, PercentagePriceCalculator $percentage_calculator)
     {
         $this->repoOrders = $repoOrders;
         $this->orderConverter = $orderConverter;
         $this->processor = $processor;
         $this->systemConfigService = $systemConfigService;
+        $this->percentage_calculator = $percentage_calculator;
     }
 
     /**
@@ -66,7 +76,66 @@ class OrderCloneService
         // into a cart. this one will be adjusted and later on converted into a new order
         $cart = $this->orderConverter->convertToCart($existingOrder, $context);
 
+        // CUSTOM ADDITION FOR APPLYING SUBSCRIPTION DISCOUNT
+        $mollieSubscriptionId = $existingOrder->getCustomFields()['mollie_payments']['swSubscriptionId'] ?? null;
+
+        if (null !== $mollieSubscriptionId) {
+            $criteria = new Criteria();
+            $criteria->addFilter(new EqualsFilter('customFields.mollie_payments.swSubscriptionId', $mollieSubscriptionId));
+
+            $ordersWithSameMollieId = $this->repoOrders->search($criteria, $context)->getEntities();
+
+            // count all orders with the same mollie id
+            $subscriptionOrderCount = count($ordersWithSameMollieId);
+
+            // only for testing
+            // $subscriptionOrderCount = 4;
+
+            // get all subscription products
+            $subscriptionProducts = $this->findSubscriptionProducts($cart);
+
+            if ($subscriptionProducts->count() > 0) {
+                // get the subscription discount percentage
+                $subscriptionDiscount = $this->getSubscriptionDiscountPercentage($subscriptionOrderCount, $salesChannelContext->getSalesChannelId());
+
+                // create a new line item for our discount
+                $discountLineItem = $this->createDiscountLineItem($subscriptionDiscount);
+
+                // declare price definition to define how this price is calculated
+                $definition = new PercentagePriceDefinition(
+                    $subscriptionDiscount['value'],
+                    new LineItemRule(LineItemRule::OPERATOR_EQ, $subscriptionProducts->getKeys())
+                );
+
+                $discountLineItem->setPriceDefinition($definition);
+
+                // calculate price
+                $discountLineItem->setPrice(
+                    $this->percentage_calculator->calculate($definition->getPercentage(), $subscriptionProducts->getPrices(), $salesChannelContext)
+                );
+
+                // add discount to new cart
+                $cart->getLineItems()->add($discountLineItem);
+
+                // // recalculate cart price
+                // $newPrice = new CartPrice(
+                //     // nett total position
+                //     $cart->getPrice()->getNetPrice(),
+                //     $cart->getPrice()->getTotalPrice(),
+                //     $cart->getPrice()->getTotalPrice() - $discountLineItem->getPrice()->getTotalPrice(),
+                //     $cart->getPrice()->getCalculatedTaxes(),
+                //     $cart->getPrice()->getTaxRules(),
+                //     $cart->getPrice()->getTaxStatus()
+                // );
+
+                // $cart->setPrice(
+                //     $newPrice
+                // );
+            }
+        }
+
         $behavior = new CartBehavior($salesChannelContext->getPermissions());
+
         $cart = $this->processor->process($cart, $salesChannelContext, $behavior);
 
         $conversionContext = new OrderConversionContext();
@@ -121,39 +190,8 @@ class OrderCloneService
         $oldBillingAddressID = $existingOrder->getBillingAddressId();
         $orderData['billingAddressId'] = $mappingsAddressIDs[$oldBillingAddressID];
 
-        // USTOM ADDOPTION
-        // fetch all other orders from orders repo with the same mollie id
-
-        $mollieSubscriptionId = $existingOrder->getCustomFields()['mollie_payments']['swSubscriptionId'] ?? null;
-
-        if (null !== $mollieSubscriptionId) {
-            $criteria = new Criteria();
-            $criteria->addFilter(new EqualsFilter('customFields.mollie_payments.swSubscriptionId', $mollieSubscriptionId));
-
-            $ordersWithSameMollieId = $this->repoOrders->search($criteria, $context)->getEntities();
-
-            // count all orders with the same mollie id
-            // $subscriptionOrderCount = count($ordersWithSameMollieId);
-
-            // only for testing
-            $subscriptionOrderCount = 4;
-
-            // get the subscription discount percentage
-            $subscriptionDiscountPercentage = $this->getSubscriptionDiscountPercentage($subscriptionOrderCount, $salesChannelContext->getSalesChannelId());
-        }
-
         foreach ($orderData['lineItems'] as $index => $lineItem) {
             $orderData['lineItems'][$index]['id'] = Uuid::randomHex();
-
-            // apply subscription discount if it exists on subscribed products
-            // CUSTOM ADOPTION
-            if (isset($subscriptionDiscountPercentage) and 'product' === $lineItem['type'] and true === $lineItem['payload']['customFields']['mollie_payments_product_subscription_enabled']) {
-                // $price = $lineItem['price'];
-                // $unitPrice = $price->getUnitPrice();
-                // $newUnitPrice = $unitPrice - ($unitPrice * ($subscriptionDiscountPercentage / 100));
-                // $price->setUnitPrice($newUnitPrice);
-                // $price->setTotalPrice($newUnitPrice * $lineItem['quantity']);
-            }
         }
 
         foreach ($orderData['deliveries'] as $index => $delivery) {
@@ -183,9 +221,40 @@ class OrderCloneService
         return $newOrderId;
     }
 
-    public function getSubscriptionDiscountPercentage(int $subscriptionOrderCount, $salesChannelId): float
+    private function findSubscriptionProducts(Cart $cart): LineItemCollection
     {
-        $discount = 0.0;
+        return $cart->getLineItems()->filter(function (LineItem $item) {
+            // Only consider products, not custom line items or promotional line items
+            if (LineItem::PRODUCT_LINE_ITEM_TYPE !== $item->getType()) {
+                return false;
+            }
+
+            // $exampleInLabel = false !== stripos($item->getLabel(), 'example');
+            if (null === $item->getPayloadValue('customFields')) {
+                return false;
+            }
+
+            if (!array_key_exists('mollie_payments_product_subscription_enabled', $item->getPayloadValue('customFields'))) {
+                return false;
+            }
+
+            $isMollieSubscriptionProduct = $item->getPayloadValue('customFields')['mollie_payments_product_subscription_enabled'];
+
+            if (!$isMollieSubscriptionProduct) {
+                return false;
+            }
+
+            return $item;
+        });
+    }
+
+    private function getSubscriptionDiscountPercentage(int $subscriptionOrderCount, $salesChannelId): array
+    {
+        $discount = [
+            'value' => 0.0,
+            'label' => 'Abo Rabatt',
+            'type' => 'promotion',
+        ];
 
         $numberOfDiscountsToApplyField = $this->systemConfigService->get('MolliePayments.config.numberOfDiscounts', $salesChannelId);
 
@@ -197,72 +266,84 @@ class OrderCloneService
 
         switch ($discountTakes) {
             case 1:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterFirstPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterFirstPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 2:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterSecondPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterSecondPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 3:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterThirdPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterThirdPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 4:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterFourthPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterFourthPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 5:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterFifthPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterFifthPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 6:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterSixthPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterSixthPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 7:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterSeventhPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterSeventhPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 8:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterEighthPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterEighthPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 9:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterNinthPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterNinthPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 10:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterTenthPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterTenthPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 11:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterEleventhPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterEleventhPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             case 12:
-                $discount = (float) $this->systemConfigService->get('MolliePayments.config.afterTwelfthPaymentRate', $salesChannelId);
+                $discount['value'] = (float) $this->systemConfigService->get('MolliePayments.config.afterTwelfthPaymentRate', $salesChannelId) * -1;
 
                 break;
 
             default:
-                $discount = 0.0;
+                $discount['value'] = (float) 0.0 * -1;
 
                 break;
         }
 
         return $discount;
+    }
+
+    private function createDiscountLineItem(array $discount): LineItem
+    {
+        $discountLineItem = new LineItem($discount['type'], $discount['type'], null, 1);
+
+        $discountLineItem->setLabel($discount['label']);
+        $discountLineItem->setGood(false);
+        $discountLineItem->setStackable(false);
+        $discountLineItem->setRemovable(false);
+
+        return $discountLineItem;
     }
 
     /**

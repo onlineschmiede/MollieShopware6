@@ -1074,16 +1074,15 @@
             <label lang="de-DE">Rabatt nach der ersten Zahlung (%)</label>
             <helpText>Enter value (in decimal format 10.5)</helpText>
             <helpText lang="de-DE">Wert eingeben (im Dezimalformat 10,5)</helpText>
-            <defaultValue>5.0</defaultValue>
+            <defaultValue>8.0</defaultValue>
         </input-field>
-        
         <input-field type="float">
             <name>afterSecondPaymentRate</name>
             <label>Discount after the second payment (%)</label>
             <label lang="de-DE">Rabatt nach der zweiten Zahlung (%)</label>
             <helpText>Enter value (in decimal format 10.5)</helpText>
             <helpText lang="de-DE">Wert eingeben (im Dezimalformat 10,5)</helpText>
-            <defaultValue>5.0</defaultValue>
+            <defaultValue>6.0</defaultValue>
         </input-field>
         <input-field type="float">
             <name>afterThirdPaymentRate</name>
@@ -1091,7 +1090,7 @@
             <label lang="de-DE">Rabatt nach der dritten Zahlung (%)</label>
             <helpText>Enter value (in decimal format 10.5)</helpText>
             <helpText lang="de-DE">Wert eingeben (im Dezimalformat 10,5)</helpText>
-            <defaultValue>5.0</defaultValue>
+            <defaultValue>6.0</defaultValue>
         </input-field>
         <input-field type="float">
             <name>afterFourthPaymentRate</name>
@@ -1099,7 +1098,7 @@
             <label lang="de-DE">Rabatt nach der vierten Zahlung (%)</label>
             <helpText>Enter value (in decimal format 10.5)</helpText>
             <helpText lang="de-DE">Wert eingeben (im Dezimalformat 10,5)</helpText>
-            <defaultValue>5.0</defaultValue>
+            <defaultValue>6.0</defaultValue>
         </input-field>
         <input-field type="float">
             <name>afterFifthPaymentRate</name>
@@ -1107,7 +1106,7 @@
             <label lang="de-DE">Rabatt nach der fünften Zahlung (%)</label>
             <helpText>Enter value (in decimal format 10.5)</helpText>
             <helpText lang="de-DE">Wert eingeben (im Dezimalformat 10,5)</helpText>
-            <defaultValue>5.0</defaultValue>
+            <defaultValue>6.0</defaultValue>
         </input-field>
         <input-field type="float">
             <name>afterSixthPaymentRate</name>
