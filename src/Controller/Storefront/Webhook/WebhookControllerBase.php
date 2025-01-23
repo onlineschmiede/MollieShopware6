@@ -151,11 +151,14 @@ class WebhookControllerBase extends AbstractStoreFrontController
             # for that order. If we do not have one, then create a new Shopware order
             $existingOrders = $this->repoOrders->findByMollieId($subscription->getCustomerId(), $molliePaymentId, $context->getContext());
 
-            if ($existingOrders->count() <= 0) {
-                $swOrder = $this->subscriptions->renewSubscription($swSubscriptionId, $molliePaymentId, $context->getContext());
-            } else {
-                $swOrder = $existingOrders->last();
-            }
+            // TODO: REVERT AFTER DONE
+//            if ($existingOrders->count() <= 0) {
+//                $swOrder = $this->subscriptions->renewSubscription($swSubscriptionId, $molliePaymentId, $context->getContext());
+//            } else {
+//                $swOrder = $existingOrders->last();
+//            }
+
+            $swOrder = $this->subscriptions->renewSubscription($swSubscriptionId, $molliePaymentId, $context->getContext());
 
 
             # now lets grab the latest order transaction of our new order

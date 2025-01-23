@@ -2,6 +2,8 @@
 
 namespace Kiener\MolliePayments\Components\Subscription\Services\SubscriptionRenewing;
 
+use Kiener\MolliePayments\Service\ConfigService;
+use Shopware\Core\Checkout\Cart\Cart;
 use Shopware\Core\Checkout\Cart\CartBehavior;
 use Shopware\Core\Checkout\Cart\Order\OrderConversionContext;
 use Shopware\Core\Checkout\Cart\Order\OrderConverter;
@@ -13,6 +15,8 @@ use Shopware\Core\Checkout\Order\Aggregate\OrderDelivery\OrderDeliveryEntity;
 use Shopware\Core\Checkout\Order\OrderEntity;
 use Shopware\Core\Framework\Context;
 use Shopware\Core\Framework\DataAbstractionLayer\EntityRepository;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
+use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
 use Shopware\Core\Framework\Uuid\Uuid;
 
 class OrderCloneService
@@ -32,17 +36,24 @@ class OrderCloneService
      */
     private $processor;
 
+    /**
+     * @var ConfigService
+     */
+    private $configService;
+
 
     /**
      * @param EntityRepository $repoOrders
      * @param OrderConverter $orderConverter
      * @param Processor $processor
+     * @param ConfigService $configService
      */
-    public function __construct(EntityRepository $repoOrders, OrderConverter $orderConverter, Processor $processor)
+    public function __construct(EntityRepository $repoOrders, OrderConverter $orderConverter, Processor $processor, ConfigService $configService)
     {
         $this->repoOrders = $repoOrders;
         $this->orderConverter = $orderConverter;
         $this->processor = $processor;
+        $this->configService = $configService;
     }
 
 
@@ -56,6 +67,9 @@ class OrderCloneService
      */
     public function createNewOrder(OrderEntity $existingOrder, string $newOrderNumber, bool $needsSeparateShippingAddress, Context $context): string
     {
+        $existingOrder = $this->applyRentalDiscountsToOrder($existingOrder, $context);
+        throw new \Exception('Stopping further execution - WIP');
+
         if (!$existingOrder->getAddresses() instanceof OrderAddressCollection) {
             throw new \Exception('Order does not have an address collection');
         }
@@ -72,7 +86,6 @@ class OrderCloneService
         # we start by converting our existing order
         # into a cart. this one will be adjusted and later on converted into a new order
         $cart = $this->orderConverter->convertToCart($existingOrder, $context);
-
 
         $behavior = new CartBehavior($salesChannelContext->getPermissions());
         $cart = $this->processor->process($cart, $salesChannelContext, $behavior);
@@ -135,7 +148,7 @@ class OrderCloneService
         $orderData['billingAddressId'] = $mappingsAddressIDs[$oldBillingAddressID];
 
 
-        foreach ($orderData['lineItems'] as $index => $lineitem) {
+        foreach ($orderData['lineItems'] as $index => $lineItem) {
             $orderData['lineItems'][$index]['id'] = Uuid::randomHex();
         }
 
@@ -165,6 +178,28 @@ class OrderCloneService
         });
 
         return $newOrderId;
+    }
+
+    private function applyRentalDiscountsToOrder(OrderEntity $existingOrder, Context $context): OrderEntity
+    {
+        $discountFactor = $this->getSubscriptionDiscountFactor($existingOrder, $context);
+        return $existingOrder;
+//        $rentDiscountValue = $lineItem['price']['unitPrice'] * $this->getSubscriptionDiscountFactor($existingOrder, $context);
+//        $orderData['lineItems'][$index]['price']['unitPrice'] -= $rentDiscountValue;
+//        $orderData['lineItems'][$index]['price']['totalPrice'] = $orderData['lineItems'][$index]['price']['unitPrice'] * $lineItem['quantity'];
+    }
+
+    private function getSubscriptionDiscountFactor(OrderEntity $orderEntity, Context $context): float
+    {
+        $subscriptionId = $orderEntity->getCustomFields()['mollie_payments']['swSubscriptionId'];
+        $criteria = (new Criteria())->addFilter(new EqualsFilter('customFields.mollie_payments.swSubscriptionId', $subscriptionId));
+        $interval = count($this->repoOrders->search($criteria, $context));
+
+        # use the last interval value (12) for continuous renewals that exceed the number of configured intervals
+        $interval = min($interval + 1, 12);
+        $discountPercentage = $this->configService->get("rentDiscountPercentageAtInterval{$interval}", $orderEntity->getSalesChannelId());
+
+        return $discountPercentage / 100;
     }
 
     /**
