@@ -62,21 +62,6 @@ class OrderCloneService
 
         $salesChannelContext = $this->orderConverter->assembleSalesChannelContext($existingOrder, $context);
 
-        // fetch all other orders from orders repo with the same mollie id
-        $mollieSubscriptionId = $existingOrder->getCustomFields()['mollie_payments']['swSubscriptionId'] ?? null;
-
-        if (null !== $mollieSubscriptionId) {
-            $criteria = new Criteria();
-            $criteria->addFilter(new EqualsFilter('customFields.mollie_payments.swSubscriptionId', $mollieSubscriptionId));
-
-            $ordersWithSameMollieId = $this->repoOrders->search($criteria, $context)->getEntities();
-
-            // count all orders with the same mollie id
-            $subscriptionOrderCount = count($ordersWithSameMollieId);
-
-            $subscriptionDiscountPercentage = $this->getSubscriptionDiscountPercentage($subscriptionOrderCount, $salesChannelContext->getSalesChannelId());
-        }
-
         // we start by converting our existing order
         // into a cart. this one will be adjusted and later on converted into a new order
         $cart = $this->orderConverter->convertToCart($existingOrder, $context);
@@ -136,13 +121,38 @@ class OrderCloneService
         $oldBillingAddressID = $existingOrder->getBillingAddressId();
         $orderData['billingAddressId'] = $mappingsAddressIDs[$oldBillingAddressID];
 
-        foreach ($orderData['lineItems'] as $index => $lineitem) {
+        // USTOM ADDOPTION
+        // fetch all other orders from orders repo with the same mollie id
+
+        $mollieSubscriptionId = $existingOrder->getCustomFields()['mollie_payments']['swSubscriptionId'] ?? null;
+
+        if (null !== $mollieSubscriptionId) {
+            $criteria = new Criteria();
+            $criteria->addFilter(new EqualsFilter('customFields.mollie_payments.swSubscriptionId', $mollieSubscriptionId));
+
+            $ordersWithSameMollieId = $this->repoOrders->search($criteria, $context)->getEntities();
+
+            // count all orders with the same mollie id
+            // $subscriptionOrderCount = count($ordersWithSameMollieId);
+
+            // only for testing
+            $subscriptionOrderCount = 4;
+
+            // get the subscription discount percentage
+            $subscriptionDiscountPercentage = $this->getSubscriptionDiscountPercentage($subscriptionOrderCount, $salesChannelContext->getSalesChannelId());
+        }
+
+        foreach ($orderData['lineItems'] as $index => $lineItem) {
             $orderData['lineItems'][$index]['id'] = Uuid::randomHex();
 
-            // applly subscription discount if it exist
-            if (isset($subscriptionDiscountPercentage)) {
-                $lineitem['price']['unitPrice'] -= $lineitem['price']['unitPrice'] * ($subscriptionDiscountPercentage / 100);
-                $lineitem['price']['totalPrice'] = $lineitem['price']['unitPrice'] * $lineitem['quantity'];
+            // apply subscription discount if it exists on subscribed products
+            // CUSTOM ADOPTION
+            if (isset($subscriptionDiscountPercentage) and 'product' === $lineItem['type'] and true === $lineItem['payload']['customFields']['mollie_payments_product_subscription_enabled']) {
+                // $price = $lineItem['price'];
+                // $unitPrice = $price->getUnitPrice();
+                // $newUnitPrice = $unitPrice - ($unitPrice * ($subscriptionDiscountPercentage / 100));
+                // $price->setUnitPrice($newUnitPrice);
+                // $price->setTotalPrice($newUnitPrice * $lineItem['quantity']);
             }
         }
 

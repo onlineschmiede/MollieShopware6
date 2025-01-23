@@ -64,6 +64,9 @@
             <argument type="service" id="translator"/>
             <argument type="service" id="Kiener\MolliePayments\Repository\Order\OrderRepository"/>
             <argument type="service" id="Shopware\Core\System\SystemConfig\SystemConfigService" />
+            <argument type="service" id="Kiener\MolliePayments\Service\OrderService"/>
+            <argument type="service" id="Kiener\MolliePayments\Components\Subscription\Services\SubscriptionRenewing\OrderCloneService"/>
+            <argument type="service" id="Shopware\Core\System\NumberRange\ValueGenerator\NumberRangeValueGeneratorInterface"/>
             <tag name="kernel.event_subscriber"/>
         </service>
 

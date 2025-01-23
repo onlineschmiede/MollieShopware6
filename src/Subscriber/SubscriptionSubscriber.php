@@ -3,17 +3,19 @@
 namespace Kiener\MolliePayments\Subscriber;
 
 use Kiener\MolliePayments\Components\Subscription\DAL\Subscription\Struct\IntervalType;
+use Kiener\MolliePayments\Components\Subscription\Services\SubscriptionRenewing\OrderCloneService;
 use Kiener\MolliePayments\Repository\Order\OrderRepositoryInterface;
+use Kiener\MolliePayments\Service\OrderService;
 use Kiener\MolliePayments\Service\SettingsService;
 use Kiener\MolliePayments\Storefront\Struct\SubscriptionCartExtensionStruct;
 use Kiener\MolliePayments\Storefront\Struct\SubscriptionDataExtensionStruct;
 use Kiener\MolliePayments\Struct\LineItem\LineItemAttributes;
 use Kiener\MolliePayments\Struct\Product\ProductAttributes;
 use Shopware\Core\Checkout\Cart\Event\CartBeforeSerializationEvent;
-use Shopware\Core\Checkout\Cart\Event\CheckoutOrderPlacedEvent;
 use Shopware\Core\Checkout\Order\OrderEvents;
+use Shopware\Core\Framework\DataAbstractionLayer\Event\EntityWrittenEvent;
 use Shopware\Core\Framework\DataAbstractionLayer\Search\Criteria;
-use Shopware\Core\Framework\DataAbstractionLayer\Search\Filter\EqualsFilter;
+use Shopware\Core\System\NumberRange\ValueGenerator\NumberRangeValueGeneratorInterface;
 use Shopware\Core\System\SystemConfig\SystemConfigService;
 use Shopware\Storefront\Event\StorefrontRenderEvent;
 use Shopware\Storefront\Page\Checkout\Confirm\CheckoutConfirmPage;
@@ -38,14 +40,29 @@ class SubscriptionSubscriber implements EventSubscriberInterface
 
     private $repoOrders;
 
+    /**
+     * @var OrderService
+     */
+    private $orderService;
+
+    private $orderCloneService;
+
+    /**
+     * @var NumberRangeValueGeneratorInterface
+     */
+    private $numberRanges;
+
     private SystemConfigService $systemConfigService;
 
-    public function __construct(SettingsService $settingsService, TranslatorInterface $translator, OrderRepositoryInterface $repoOrders, SystemConfigService $systemConfigService)
+    public function __construct(SettingsService $settingsService, TranslatorInterface $translator, OrderRepositoryInterface $repoOrders, SystemConfigService $systemConfigService, OrderService $orderService, OrderCloneService $orderCloneService, NumberRangeValueGeneratorInterface $numberRanges)
     {
         $this->settingsService = $settingsService;
         $this->translator = $translator;
         $this->repoOrders = $repoOrders;
         $this->systemConfigService = $systemConfigService;
+        $this->orderService = $orderService;
+        $this->orderCloneService = $orderCloneService;
+        $this->numberRanges = $numberRanges;
     }
 
     /**
@@ -59,7 +76,8 @@ class SubscriptionSubscriber implements EventSubscriberInterface
             StorefrontRenderEvent::class => 'onStorefrontRender',
             ProductPageLoadedEvent::class => 'addSubscriptionData',
             CheckoutConfirmPageLoadedEvent::class => 'addSubscriptionData',
-            OrderEvents::ORDER_WRITTEN_EVENT => 'onOrderPlaced',
+            ProductPageLoadedEvent::class => 'onProductPageLoaded',
+            OrderEvents::ORDER_WRITTEN_EVENT => 'onOrderWritten',
         ];
     }
 
@@ -167,39 +185,50 @@ class SubscriptionSubscriber implements EventSubscriberInterface
         }
     }
 
+    // only for testing purposes
+    public function onProductPageLoaded(ProductPageLoadedEvent $event): void
+    {
+        // $product = $event->getPage()->getProduct();
+        $product = $event
+            ->getPage()
+            ->getProduct()
+        ;
+
+        // Get a product ID
+        $productId = $product->getId();
+        if (empty($productId)) {
+            return;
+        }
+
+        if ('0194893011ef7dd68ea81db2249091b8' == $productId) {
+            $context = $event->getContext();
+            $order = $this->orderService->getOrder('01948e536bab73bf9e5b9bd37177d0d9', $context);
+
+            $newOrderNumber = $this->numberRanges->getValue('order', $context, $event->getSalesChannelContext()->getSalesChannel()->getId());
+            $orderId = $this->orderCloneService->createNewOrder($order, $newOrderNumber, false, $context);
+        }
+    }
+
     // this is not done yet, it should use EntityWrittenEvent as $event
-    public function onOrderPlaced(CheckoutOrderPlacedEvent $event): void
+    public function onOrderWritten(EntityWrittenEvent $event): void
     {
         // Here you can handle the event
-        $order = $event->getOrder();
+
+        foreach ($event->getIds() as $orderId) {
+            $criteria = new Criteria([$orderId]);
+            $criteria->addAssociation('lineItems');
+            $order = $this->repoOrders->search($criteria, $event->getContext())->first();
+        }
+
         if (null === $order) {
             return;
         }
-        $orderId = $order->getId();
-        $orderLineItems = $order->getLineItems();
-        $customFields = $order->getCustomFields();
 
-        if (isset($customFields['MolliePayments']['swSubscriptionId'])) {
-            $mollieSubscriptionId = $customFields['MolliePayments']['swSubscriptionId'];
+        $customFields = $event->getPayloads()[0]['customFields']['"mollie_payments']['swSubscriptionId'] ?? null;
 
-            // do something with the subscription ID
-            if (null !== $mollieSubscriptionId) {
-                $criteria = new Criteria();
-                $criteria->addFilter(new EqualsFilter('customFields.mollie_payments.swSubscriptionId', $mollieSubscriptionId));
-
-                $context = $event->getContext();
-
-                $ordersWithSameMollieId = $this->repoOrders->search($criteria, $context)->getEntities();
-
-                // count all orders with the same mollie id
-                $subscriptionOrderCount = count($ordersWithSameMollieId);
-
-                $subscriptionDiscountPercentage = $this->getSubscriptionDiscountPercentage($subscriptionOrderCount, $event->getSalesChannelId());
-            }
-        }
-
-        foreach ($orderLineItems as $item) {
-            $item->setCustomFieldsValue('mollie_payments.mollie_payments_subscription_discount', $subscriptionDiscountPercentage);
+        if ($customFields) {
+            // Process custom fields
+            foreach ($customFields as $key => $value);
         }
     }
 
