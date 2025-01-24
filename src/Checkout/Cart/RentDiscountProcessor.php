@@ -88,7 +88,7 @@ class RentDiscountProcessor implements CartDataCollectorInterface, CartProcessor
         $rentalProductDiscount = $this->createDiscount('rental-discount');
 
         $discountPercentageDefinition = new PercentagePriceDefinition(
-            $rentDiscountPercentage * -1,
+            (100 - $rentDiscountPercentage) * -1,
             new LineItemRule(LineItemRule::OPERATOR_EQ, $rentalProducts->getReferenceIds())
         );
 
