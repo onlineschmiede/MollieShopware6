@@ -10,7 +10,6 @@ use Shopware\Core\Checkout\Cart\LineItem\LineItemCollection;
 use Shopware\Core\Checkout\Cart\Order\OrderConversionContext;
 use Shopware\Core\Checkout\Cart\Order\OrderConverter;
 use Shopware\Core\Checkout\Cart\Price\PercentagePriceCalculator;
-use Shopware\Core\Checkout\Cart\Price\Struct\CartPrice;
 use Shopware\Core\Checkout\Cart\Price\Struct\PercentagePriceDefinition;
 use Shopware\Core\Checkout\Cart\Processor;
 use Shopware\Core\Checkout\Cart\Rule\LineItemRule;
@@ -116,26 +115,12 @@ class OrderCloneService
 
                 // add discount to new cart
                 $cart->getLineItems()->add($discountLineItem);
-
-                // // recalculate cart price
-                // $newPrice = new CartPrice(
-                //     // nett total position
-                //     $cart->getPrice()->getNetPrice(),
-                //     $cart->getPrice()->getTotalPrice(),
-                //     $cart->getPrice()->getTotalPrice() - $discountLineItem->getPrice()->getTotalPrice(),
-                //     $cart->getPrice()->getCalculatedTaxes(),
-                //     $cart->getPrice()->getTaxRules(),
-                //     $cart->getPrice()->getTaxStatus()
-                // );
-
-                // $cart->setPrice(
-                //     $newPrice
-                // );
             }
         }
 
         $behavior = new CartBehavior($salesChannelContext->getPermissions());
 
+        // process our cart with the new discount
         $cart = $this->processor->process($cart, $salesChannelContext, $behavior);
 
         $conversionContext = new OrderConversionContext();
